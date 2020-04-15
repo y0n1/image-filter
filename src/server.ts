@@ -1,8 +1,26 @@
-import express from "express";
+import express, { Request, Response, NextFunction } from "express";
 import bodyParser from "body-parser";
 import { filterImageFromURL, deleteLocalFiles } from "./util/util";
 
 export default class Server {
+  static validateQueryParams(req: Request, res: Response, next: NextFunction) {
+    const { image_url } = req.query;
+    if (!image_url) {
+      return res
+        .status(400)
+        .send({ error: "The image_url query param is missing" });
+    }
+
+    let url: URL;
+    try {
+      url = new URL(image_url);
+    } catch {
+      return res.status(400).send({ error: "Invalid URL" });
+    }
+
+    return next();
+  }
+
   static async main(args: string[]): Promise<void> {
     // Init the Express application
     const app = express();
@@ -13,9 +31,9 @@ export default class Server {
     // Use the body parser middleware for post requests
     app.use(bodyParser.json());
 
-    // @TODO1 IMPLEMENT A RESTFUL ENDPOINT
-    // GET /filteredimage?image_url={{URL}}
-    /** endpoint to filter an image from a public url.
+    /**
+     * GET /filteredimage?image_url={{URL}}
+     * Endpoint to filter an image from a public url.
      * IT SHOULD
      *    1. validate the image_url query
      *    2. call filterImageFromURL(image_url) to filter the image
@@ -26,22 +44,20 @@ export default class Server {
      * RETURNS
      *   the filtered image file
      */
-    app.get("/filteredimage", async (req, res) => {
+    app.get("/filteredimage", Server.validateQueryParams, async (req, res) => {
       const { image_url } = req.query;
-      if (!image_url) {
-        return res.sendStatus(400);
-      }
 
-      let url: URL;
+      let filteredPath: string;
       try {
-        url = new URL(image_url);
-      } catch {
-        return res.status(400).send("Invalid URL");
+        filteredPath = await filterImageFromURL(image_url);
+      } catch (error) {
+        return res.status(500).send({error: error.message});
       }
 
-      const filteredPath = await filterImageFromURL(image_url);
-      res.sendFile(filteredPath);
-      deleteLocalFiles([filteredPath])
+      res.sendFile(filteredPath, async (error) => {
+        if (error) return res.status(500).send({ error: error.message });
+        await deleteLocalFiles([filteredPath]);
+      });
     });
 
     // Root Endpoint
